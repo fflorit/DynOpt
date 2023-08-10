@@ -35,5 +35,5 @@ If you use any part of this code in your work, please cite the [paper](url).
 ```
 
 ### License
-This software is released under the ......... license. For more details, please refer
-[LICENSE](url).
+This software is released under the ......... license. For more details, please refer to
+[LICENSE](https://github.com/fflorit/DynOpt/blob/main/LICENSE).
