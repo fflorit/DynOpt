@@ -3,7 +3,7 @@ DynOpt is a toolbox for chemical reaction optimization using dynamic experiments
 
 Data provided to the algorithm can come from both steady or dynamic experiments under different conditions (e.g., composition, temperature, residence time) in a continuous/Euclidean chemical design space. The algorithm will provide a trajectory (optimization parameters as a function of time) to explore such design space. Such trajectory can be run experimentally using a single dynamic experiment or (less efficiently) with a series of steady experiments in discrete location of the trajectory. After providing the new data to the algorithm (re-training), the procedure is repeated until the algorithm stopping criteria are met.
 
-DynO is compatible with Python 3 (>= 3.6) and has been tested on Windows. For details about theory see the [paper](http://dx.doi.org/10.1039/D1RE00350J) on dynamic experiments and the [one](http://dx.doi.org/10.1039/D4RE00543K) on optimization.
+DynO is compatible with Python 3 (>= 3.6) and has been tested on Windows. For details about theory see the paper on [dynamic experiments](http://dx.doi.org/10.1039/D1RE00350J) and the one on [optimization](http://dx.doi.org/10.1039/D4RE00543K).
 
 &nbsp;
 
