@@ -3,21 +3,7 @@ DynOpt is a toolbox for chemical reaction optimization using dynamic experiments
 
 Data provided to the algorithm can come from both steady or dynamic experiments under different conditions (e.g., composition, temperature, residence time) in a continuous/Euclidean chemical design space. The algorithm will provide a trajectory (optimization parameters as a function of time) to explore such design space. Such trajectory can be run experimentally using a single dynamic experiment or (less efficiently) with a series of steady experiments in discrete location of the trajectory. After providing the new data to the algorithm (re-training), the procedure is repeated until the algorithm stopping criteria are met.
 
-DynO is compatible with Python 3 (>= 3.6) and has been tested on Windows. For details about theory see the [paper](url) on dynamic experiments and the one on optimization [paper](url).
-
-## Installation
-You can install DynO via pip:
-```
-$ pip install dynopt
-```
-
-## Simplest use
-DynO is meant to be used in a Python code with few simple APIs and then using the results in an experimental setup.
-
-Simple example..........
-
-**Advanced use**
-
+DynO is compatible with Python 3 (>= 3.6) and has been tested on Windows. For details about theory see the [paper](http://dx.doi.org/10.1039/D1RE00350J) on dynamic experiments and the [one](http://dx.doi.org/10.1039/D4RE00543K) on optimization.
 
 &nbsp;
 
@@ -25,17 +11,17 @@ Simple example..........
 Federico Florit: [github](https://github.com/fflorit)
 
 ### Citation
-If you use any part of this code in your work, please cite the [paper](url).
+If you use any part of this code in your work, please cite the [paper](http://dx.doi.org/10.1039/D4RE00543K).
 ```
-@article{placeholder,
-  author  = {...},
-  title   = {...},
-  journal = {...},
-  year    = {...},
-  volume  = {...},
-  number  = {...},
-  pages   = {...},
-  url     = {...}
+@article{DynO,
+  author  = {Florit, Federico and Nandiwale, Kakasaheb Y. and Armstrong, Cameron T. and Grohowalski, Katharina and Diaz, Angel R. and Mustakis, Jason and Guinness, Steven M. and Jensen, Klavs F.},
+  title   = {Dynamic flow experiments for Bayesian optimization of a single process objective},
+  journal = {React. Chem. Eng.},
+  year    = {2025},
+  volume  = {-},
+  number  = {-},
+  pages   = {-},
+  doi  = {10.1039/D4RE00543K}
 }
 ```
 
@@ -43,4 +29,4 @@ If you use any part of this code in your work, please cite the [paper](url).
 This software is released under a BSD 3-Clause license. For more details, please refer to
 [LICENSE](https://github.com/fflorit/DynOpt/blob/main/LICENSE).
 
-"Copyright 2023 Federico Florit"
+"Copyright 2025 Federico Florit"
