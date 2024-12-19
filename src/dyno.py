@@ -86,10 +86,10 @@ class DynO:
     
     
     # ------------------------------ Data management ------------------------------
-    #   AddExp:
-    #   AddResults:
-    #   AddData:
-    #   Believer:
+    #   AddExp: Updates the trajectory parameters
+    #   AddResults: Adds experimental data to the history and retrains the GP
+    #   AddData: Imports data from a CSV file and updates the GP
+    #   Believer: (for testing) adds data to the pool based on the current trajectory and GP
     # ------------------------------
     
     def AddExp(self, X0, delta, period, phase, texp):
@@ -173,10 +173,10 @@ class DynO:
     
     
     # ------------------------------ Dynamic Experiment functions ------------------------------
-    #   Xinst: instantaneous sinusoidal parameters
+    #   Xinst: returns instantaneous sinusoidal parameters
     #   Solve_tau: Analytical solution of the tau equation for sinusoidal variations
-    #   Sample_X:
-    #   EvalSScompare:
+    #   Sample_X: returns the sampled trajectory conditions
+    #   EvalSScompare: returns the parameters for comparison with equivalents steady conditions
     #   SuggestInit: suggests a Lissajous trajectory for intialization
     # ------------------------------
 
@@ -223,7 +223,6 @@ class DynO:
                                                -np.arctan((t_p2+d)/a))
             elif t<=self.texp:
                 tt = np.tan(pi*t/T+phi/2)
-#                 nojumps = np.floor((tstar-tjump)/T)-np.floor((t-tjump)/T)
                 nojumps = -np.floor((t-tjump)/T)
                 
                 tau[ii] = t+nojumps*T-T/pi*(np.arctan(((a/t_t0pia_T_0-d)*tt-(a**2+d**2))/
@@ -330,12 +329,12 @@ class DynO:
         return X0, delta, period, phase, texp, NS, tSampl, XSampl
     
     # ------------------------------ Gaussian Process functions (DynO core) ------------------------------
-    #   RefitGP:
-    #   QueryGP:
-    #   GetGPUCB:
-    #   GetAcquisitionFun:
-    #   CalculateNewTrajectory:
-    #   CheckConvergence:
+    #   RefitGP: trains the GP based on the current data history
+    #   QueryGP: returns the average and standard deviation of the GP at given points
+    #   GetGPUCB: returns the GP-UCB at given points
+    #   GetAcquisitionFun: returns the acquisition function value
+    #   CalculateNewTrajectory: optimizes the acquisition function based on the current data pool
+    #   CheckConvergence: returns the values of the convergence criteria
     # ------------------------------
     
     def RefitGP(self):
@@ -467,8 +466,8 @@ class DynO:
     # ------------------------------ Auxiliary functions ------------------------------
     #   GetMinDist: calculates the minimum normalized distances
     #   NLConstr: nonlinear constraints on new trajectories
-    #   EstimateMax:
-    #   GetEI:
+    #   EstimateMax: evaluates the maximum of the GP in the domain
+    #   GetEI: returns the expected improvement at given points
     # ------------------------------
     
     def GetMinDist(self, Xnorm):
@@ -512,8 +511,8 @@ class DynO:
     
     
     # ------------------------------ Display functions ------------------------------
-    #   PlotTrajectory:
-    #   PlotEstimate:
+    #   PlotTrajectory: plots the values of the optimization parameters over time based on the current trajectory
+    #   PlotEstimate: returns the trajectory and the objective funcion (if dimensionality <= 3) evaluated with the GP
     # ------------------------------
     
     def PlotTrajectory(self, tSampl=[], XSampl=[], XInst=[], ObjSampl=[], PlotEI=False, PlotUCB=False, Verbose=False):
