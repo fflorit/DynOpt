@@ -636,3 +636,32 @@ class DynO:
                     ax.set_xlabel(self.var_names[0])
                     ax.set_ylabel(self.var_names[1])
                     ax.set_zlabel('Objective')
+                    
+        elif self.d>2:
+            tmpsampler = np.random.rand(1000,self.d)
+            Xplot = self.Xdenorm(tmpsampler)
+            (estimObjNorm, estimStdNorm) = self.QueryGP(Xplot)
+
+            estimObj = estimObjNorm*self.ObjRescaleF
+            estimStd = estimStdNorm*self.ObjRescaleF
+
+            if PlotUCB: fig = plt.figure(figsize=(5*self.d,10))
+            else: fig = plt.figure(figsize=(5*self.d,5))
+            for ii in range(self.d):
+                if PlotUCB: ax = fig.add_subplot(2,self.d,ii+1)
+                else: ax = fig.add_subplot(1,self.d,ii+1)
+                scattplot = ax.scatter(Xplot[:,ii], estimObj, s=4, c=estimStd, alpha=.4, marker='o', cmap='jet', vmin=0)
+                ax.plot(self.X_hist[:,ii], self.obj_hist, 'k.')
+                if not len(XSampl)==0: ax.plot(XSampl[:,ii], ObjSampl, '*r')
+                ax.set_xlabel(self.var_names[ii])
+                ax.set_ylabel('Objective')
+
+                if PlotUCB:
+                    ax = fig.add_subplot(2,self.d,self.d+ii+1)
+                    ax.scatter(Xplot[:,ii],self.GetGPUCB(estimObj,estimStd), s=4, c=estimStd, alpha=.4, marker='o', cmap='jet', vmin=0)
+                    ax.set_xlabel(self.var_names[ii])
+                    ax.set_ylabel('GP-UCB')
+
+            fig.subplots_adjust(right=0.9)
+            cbar_ax = fig.add_axes([0.93, 0.15, 0.01, 0.7])
+            fig.colorbar(scattplot, cax=cbar_ax, label='GP standard deviation')
