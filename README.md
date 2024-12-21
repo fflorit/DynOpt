@@ -1,3 +1,5 @@
+![logo](https://github.com/fflorit/DynOpt/blob/DynOpt_v0.2/DynOpt_logo.svg)
+
 # DynOpt
 DynOpt is a toolbox for chemical reaction optimization using dynamic experiments in a flow-chemistry setup, leveraging Bayesian optimization to suggest new dynamic experiments to perform in an experimental setup.
 
