@@ -29,6 +29,6 @@ If you use any part of this code in your work, please cite the [paper](http://dx
 
 ### License
 This software is released under a BSD 3-Clause license. For more details, please refer to
-[LICENSE](LICENSE.txt).
+[LICENSE](LICENSE).
 
 "Copyright 2025 Federico Florit"
