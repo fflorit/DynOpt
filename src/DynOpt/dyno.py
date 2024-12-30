@@ -25,7 +25,7 @@ class DynO:
         self.repulsion0_decay = repulsion0_decay #speed of repulsion factor decrease
         self.SamplVratio = SamplVratio #(>=1) volume from reactor end to sampling point, divided by reactor volume
         self.ObjRescaleF = 1 #objective function rescaling factor
-        self.iter = 0 #current iteration number
+        self.iter = -1 #current iteration number: -1 no data, 0 init, >0 actual iterations
         self.no_tau_to_SS = no_tau_to_SS
         
         #speed parameters
@@ -173,7 +173,6 @@ class DynO:
     
     # ------------------------------ Dynamic Experiment functions ------------------------------
     #   Xinst: returns instantaneous sinusoidal parameters
-    #   Solve_tau: Analytical solution of the tau equation for sinusoidal variations
     #   Sample_X: returns the sampled trajectory conditions
     #   EvalSScompare: returns the parameters for comparison with equivalents steady conditions
     #   SuggestInit: suggests a Lissajous trajectory for intialization
@@ -184,70 +183,15 @@ class DynO:
         
         return trueVal
     
-    def Solve_tau(self, tVct, t0=[], d=[], T=[], phi=[]):
-        #by default samples the last trajectory at the reactor outlet
-        if not t0: t0 = self.X0[0]
-        if not d: d = self.delta[0]
-        if not T: T = self.period[0]
-        if not phi: phi = self.phase[0]
-        
-        pi = np.pi
-        
-        a = np.sqrt(1-d**2)
-        tauiE = self.Xinst(self.texp)[0]
-        t_p2 = np.tan(phi/2)
-        
-        t_t0pia_T_0 = np.tan(t0*pi*a/T)
-        tstarmin = np.floor(t0*(1+d*np.sin(phi))/T)*T
-        tstar = T/pi*(np.arctan(-((a/t_t0pia_T_0+d)*t_p2+(a**2+d**2))/
-                                        (t_p2-a/t_t0pia_T_0+d))
-                              -phi/2)
-        while tstar<tstarmin: tstar = tstar+T
-            
-        tjump = -T/pi*(phi/2+np.arctan(a/t_t0pia_T_0+d))
-        
-        ttend = np.tan(pi*self.texp/T+phi/2)
-        tjumpend = self.texp+tauiE+T*tauiE/t0/pi/a*np.arctan(a/(ttend+d))
-        while tjumpend<self.texp: tjumpend = tjumpend+T*tauiE/t0/a
-        
-        tau = tVct+np.nan
-        for ii,t in enumerate(tVct):
-            if t<=0:
-                tau[ii] = t0*(1+d*np.sin(phi))
-            elif t<=tstar:
-                tt = np.tan(pi*t/T+phi/2)
-                
-                tau[ii] = t-np.floor(t/T+1/2+phi/2/pi)*T*(1+d*np.sin(phi))/a+t0*(1+d*np.sin(phi)) \
-                    -T*(1+d*np.sin(phi))/pi/a*(np.arctan((tt+d)/a)
-                                               -np.arctan((t_p2+d)/a))
-            elif t<=self.texp:
-                tt = np.tan(pi*t/T+phi/2)
-                nojumps = -np.floor((t-tjump)/T)
-                
-                tau[ii] = t+nojumps*T-T/pi*(np.arctan(((a/t_t0pia_T_0-d)*tt-(a**2+d**2))/
-                                                      (tt+a/t_t0pia_T_0+d)) -phi/2)
-            elif t<=self.texp+tauiE:
-                end_factor = (self.texp+tauiE-t)/tauiE
-                t_t0pia_T_end = np.tan(t0*pi*a/T*end_factor)
-                nojumps = np.floor((tstar-tjump)/T)-np.floor((self.texp-tjump)/T)-1-np.floor((t-tjumpend)/(T*tauiE/t0/a))
-                
-                tau[ii] = t+nojumps*T-T/pi*(np.arctan(((a/t_t0pia_T_end-d)*ttend-(a**2+d**2))/
-                                                      (ttend+a/t_t0pia_T_end+d)) -phi/2)
-            else:
-                tau = tauiE
-        return np.reshape(tau, [-1,1])
-    
     def Sample_X(self, tSampl, t0=[], d=[], T=[], phi=[]):
         #by default the function samples at sample point (not at reactor outlet unless self.SamplVratio=1)
         if not t0: t0 = self.X0[0]*self.SamplVratio
         if not d: d = self.delta[0]/self.SamplVratio
         
-        # tauSampl = self.Solve_tau(tSampl, t0, d, T, phi) #analytical solution
-        tauSampl = odeint(lambda tau,t: 1-self.Xinst(t-tau)[0]/self.Xinst(t)[0], self.Xinst(tSampl[0])[0]*self.SamplVratio, tSampl) #numerical
+        tauSampl = odeint(lambda tau,t: 1-self.Xinst(t-tau)[0]/self.Xinst(t)[0], self.Xinst(tSampl[0])[0]*self.SamplVratio, tSampl)
         XSampl = self.Xinst(np.reshape(tSampl, [-1,1])-tauSampl)
         
-        # tauRxt = self.Solve_tau(tSampl) #analytical solution
-        tauRxt = odeint(lambda tau,t: 1-self.Xinst(t-tau)[0]/self.Xinst(t)[0], self.Xinst(tSampl[0])[0], tSampl) #numerical
+        tauRxt = odeint(lambda tau,t: 1-self.Xinst(t-tau)[0]/self.Xinst(t)[0], self.Xinst(tSampl[0])[0], tSampl)
         
         for ii,doInt in enumerate(self.IntegralSample):
             if doInt:
@@ -273,7 +217,6 @@ class DynO:
                                                                  (np.cos(2*np.pi*ub/self.period[ii]+self.phase[ii])-
                                                                   np.cos(2*np.pi*lb/self.period[ii]+self.phase[ii]))
                                                                 )
-                    
         
         for ii,tauR in enumerate(tauRxt):
             XSampl[ii,0] = tauR
@@ -376,7 +319,7 @@ class DynO:
         return (sum(Obj) - NHC*dist_corr)/NS_guess #Returns a function to be MAXIMIZED
     
     def CalculateNewTrajectory(self, NS_guess=None, dtS_guess=None):
-        self.repulsion = self.repulsion0/self.repulsion0_decay**(self.iter-1)
+        self.repulsion = self.repulsion0/self.repulsion0_decay**self.iter
         print('Creating a new trajectory (based on iterations up to %i).' % (self.iter,))
 
         if not NS_guess: NS_guess = 3*self.d
@@ -414,7 +357,7 @@ class DynO:
         return X0, delta, period, phase, texp, NS, tSampl, XSampl
     
     def CheckConvergence(self, Verbose=True):
-        if self.iter>1:
+        if self.iter>0:
             criteria_names = ['Measured and estimated objectives have similar value (10% significance level)',
                               'Measured and estimated objectives are close in the design space (< %0.3f)' % (self.repulsion0),
                               'Estimated objective value has low uncertainty (sigma-sigma_n < 5%)',
@@ -449,9 +392,9 @@ class DynO:
                     print('\n1i4c criterion satisfied at iteration %i. Regret estimate < 1%%' % (self.iter,))
                 elif sum(criteria)==3:
                     print('\n1i3c criterion satisfied at iteration %i. Regret estimate < 2%%' % (self.iter,))
-                elif sum(criteria)==2 and self.iter>=3:
+                elif sum(criteria)==2 and self.iter>=2:
                     print('\n2i2c criterion satisfied at iteration %i. Regret estimate < 2.5%%' % (self.iter,))
-                elif sum(criteria)==1 and self.iter>=3:
+                elif sum(criteria)==1 and self.iter>=2:
                     print('\n2i1c criterion satisfied at iteration %i. Regret estimate < 3%%' % (self.iter,))
         else:
             criteria = [False]*4
