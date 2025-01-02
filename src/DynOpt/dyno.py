@@ -25,7 +25,7 @@ class DynO:
         self.repulsion0_decay = repulsion0_decay #speed of repulsion factor decrease
         self.SamplVratio = SamplVratio #(>=1) volume from reactor end to sampling point, divided by reactor volume
         self.ObjRescaleF = 1 #objective function rescaling factor
-        self.iter = 0 #current iteration number
+        self.iter = -1 #current iteration number: -1 no data, 0 init, >0 actual iterations
         self.no_tau_to_SS = no_tau_to_SS
         
         #speed parameters
@@ -46,7 +46,7 @@ class DynO:
         self.Nsampl = []
         self.KX = []
         
-        # History of variation parameters
+        # History of trajectory parameters
         self.X0_hist = np.empty((0,self.d), float)
         self.delta_hist = np.empty((0,self.d), float)
         self.period_hist = np.empty((0,self.d), float)
@@ -101,7 +101,7 @@ class DynO:
         self.Nsampl = int(self.texp/self.dtSampling+1)
         self.KX = 2*np.pi*self.delta*self.X0[0]/self.period
     
-    def AddResults(self, t, X, Obj, SScompare):
+    def AddResults(self, t, X, Obj):
         self.iter += 1
         
         self.X0_hist = np.append(self.X0_hist, np.array([self.X0]), axis=0)
@@ -115,6 +115,8 @@ class DynO:
         self.tSampl_hist = np.append(self.tSampl_hist, t)
         self.X_hist = np.append(self.X_hist, X, axis=0)
         self.obj_hist = np.append(self.obj_hist, Obj)
+        
+        SScompare = self.EvalSScompare(X[:,0])
         self.SScompare_hist = np.append(self.SScompare_hist, np.array([SScompare]), axis=0)
         
         index_best = np.argmax(self.obj_hist, axis=None)
@@ -151,12 +153,10 @@ class DynO:
                 print('The theoretical trajectory is used for instantaneous variables.')
         else:
             raise Exception('Data size mismatch. Datafile should contain 2 or d+2 columns.')
-
-        SScompare = self.EvalSScompare(XSampl[:,0])
             
-        self.AddResults(tSampl, XSampl, ObjSampl, SScompare)
+        self.AddResults(tSampl, XSampl, ObjSampl)
         
-        return tSampl, XSampl, XInst, ObjSampl, SScompare
+        return tSampl, XSampl, XInst, ObjSampl
     
     def Believer(self):
         self.Nsampl = int(self.texp/self.dtSampling+1)
@@ -166,15 +166,13 @@ class DynO:
         XSampl = self.Sample_X(tSampl)
         XInst = self.Xinst(np.reshape(tSampl, [-1,1]))
         ObjSampl = self.QueryGP(XSampl, False)*self.ObjRescaleF
-        SScompare = self.EvalSScompare(XSampl[:,0])
-        self.AddResults(tSampl, XSampl, ObjSampl, SScompare)
+        self.AddResults(tSampl, XSampl, ObjSampl)
         
-        return tSampl, XSampl, XInst, ObjSampl, SScompare
+        return tSampl, XSampl, XInst, ObjSampl
     
     
     # ------------------------------ Dynamic Experiment functions ------------------------------
     #   Xinst: returns instantaneous sinusoidal parameters
-    #   Solve_tau: Analytical solution of the tau equation for sinusoidal variations
     #   Sample_X: returns the sampled trajectory conditions
     #   EvalSScompare: returns the parameters for comparison with equivalents steady conditions
     #   SuggestInit: suggests a Lissajous trajectory for intialization
@@ -185,70 +183,15 @@ class DynO:
         
         return trueVal
     
-    def Solve_tau(self, tVct, t0=[], d=[], T=[], phi=[]):
-        #by default samples the last trajectory at the reactor outlet
-        if not t0: t0 = self.X0[0]
-        if not d: d = self.delta[0]
-        if not T: T = self.period[0]
-        if not phi: phi = self.phase[0]
-        
-        pi = np.pi
-        
-        a = np.sqrt(1-d**2)
-        tauiE = self.Xinst(self.texp)[0]
-        t_p2 = np.tan(phi/2)
-        
-        t_t0pia_T_0 = np.tan(t0*pi*a/T)
-        tstarmin = np.floor(t0*(1+d*np.sin(phi))/T)*T
-        tstar = T/pi*(np.arctan(-((a/t_t0pia_T_0+d)*t_p2+(a**2+d**2))/
-                                        (t_p2-a/t_t0pia_T_0+d))
-                              -phi/2)
-        while tstar<tstarmin: tstar = tstar+T
-            
-        tjump = -T/pi*(phi/2+np.arctan(a/t_t0pia_T_0+d))
-        
-        ttend = np.tan(pi*self.texp/T+phi/2)
-        tjumpend = self.texp+tauiE+T*tauiE/t0/pi/a*np.arctan(a/(ttend+d))
-        while tjumpend<self.texp: tjumpend = tjumpend+T*tauiE/t0/a
-        
-        tau = tVct+np.nan
-        for ii,t in enumerate(tVct):
-            if t<=0:
-                tau[ii] = t0*(1+d*np.sin(phi))
-            elif t<=tstar:
-                tt = np.tan(pi*t/T+phi/2)
-                
-                tau[ii] = t-np.floor(t/T+1/2+phi/2/pi)*T*(1+d*np.sin(phi))/a+t0*(1+d*np.sin(phi)) \
-                    -T*(1+d*np.sin(phi))/pi/a*(np.arctan((tt+d)/a)
-                                               -np.arctan((t_p2+d)/a))
-            elif t<=self.texp:
-                tt = np.tan(pi*t/T+phi/2)
-                nojumps = -np.floor((t-tjump)/T)
-                
-                tau[ii] = t+nojumps*T-T/pi*(np.arctan(((a/t_t0pia_T_0-d)*tt-(a**2+d**2))/
-                                                      (tt+a/t_t0pia_T_0+d)) -phi/2)
-            elif t<=self.texp+tauiE:
-                end_factor = (self.texp+tauiE-t)/tauiE
-                t_t0pia_T_end = np.tan(t0*pi*a/T*end_factor)
-                nojumps = np.floor((tstar-tjump)/T)-np.floor((self.texp-tjump)/T)-1-np.floor((t-tjumpend)/(T*tauiE/t0/a))
-                
-                tau[ii] = t+nojumps*T-T/pi*(np.arctan(((a/t_t0pia_T_end-d)*ttend-(a**2+d**2))/
-                                                      (ttend+a/t_t0pia_T_end+d)) -phi/2)
-            else:
-                tau = tauiE
-        return np.reshape(tau, [-1,1])
-    
     def Sample_X(self, tSampl, t0=[], d=[], T=[], phi=[]):
         #by default the function samples at sample point (not at reactor outlet unless self.SamplVratio=1)
         if not t0: t0 = self.X0[0]*self.SamplVratio
         if not d: d = self.delta[0]/self.SamplVratio
         
-        # tauSampl = self.Solve_tau(tSampl, t0, d, T, phi) #analytical solution
-        tauSampl = odeint(lambda tau,t: 1-self.Xinst(t-tau)[0]/self.Xinst(t)[0], self.Xinst(tSampl[0])[0]*self.SamplVratio, tSampl) #numerical
+        tauSampl = odeint(lambda tau,t: 1-self.Xinst(t-tau)[0]/self.Xinst(t)[0], self.Xinst(tSampl[0])[0]*self.SamplVratio, tSampl)
         XSampl = self.Xinst(np.reshape(tSampl, [-1,1])-tauSampl)
         
-        # tauRxt = self.Solve_tau(tSampl) #analytical solution
-        tauRxt = odeint(lambda tau,t: 1-self.Xinst(t-tau)[0]/self.Xinst(t)[0], self.Xinst(tSampl[0])[0], tSampl) #numerical
+        tauRxt = odeint(lambda tau,t: 1-self.Xinst(t-tau)[0]/self.Xinst(t)[0], self.Xinst(tSampl[0])[0], tSampl)
         
         for ii,doInt in enumerate(self.IntegralSample):
             if doInt:
@@ -274,7 +217,6 @@ class DynO:
                                                                  (np.cos(2*np.pi*ub/self.period[ii]+self.phase[ii])-
                                                                   np.cos(2*np.pi*lb/self.period[ii]+self.phase[ii]))
                                                                 )
-                    
         
         for ii,tauR in enumerate(tauRxt):
             XSampl[ii,0] = tauR
@@ -349,7 +291,7 @@ class DynO:
         return self.GP.predict(self.Xnorm(X), return_std=std_flag)
     
     def GetGPUCB(self, mu, std):
-        delta_par = .01 #arbitrary (0,1)
+        delta_par = .1 #arbitrary (0,1)
         taut = 2*np.log(sum(self.Nsampl_hist)**(self.d/2+2)*np.pi**2/3/delta_par) #No-regret
         return mu + np.sqrt(taut)*std
     
@@ -377,7 +319,7 @@ class DynO:
         return (sum(Obj) - NHC*dist_corr)/NS_guess #Returns a function to be MAXIMIZED
     
     def CalculateNewTrajectory(self, NS_guess=None, dtS_guess=None):
-        self.repulsion = self.repulsion0/self.repulsion0_decay**(self.iter-1)
+        self.repulsion = self.repulsion0/self.repulsion0_decay**self.iter
         print('Creating a new trajectory (based on iterations up to %i).' % (self.iter,))
 
         if not NS_guess: NS_guess = 3*self.d
@@ -415,7 +357,7 @@ class DynO:
         return X0, delta, period, phase, texp, NS, tSampl, XSampl
     
     def CheckConvergence(self, Verbose=True):
-        if self.iter>1:
+        if self.iter>0:
             criteria_names = ['Measured and estimated objectives have similar value (10% significance level)',
                               'Measured and estimated objectives are close in the design space (< %0.3f)' % (self.repulsion0),
                               'Estimated objective value has low uncertainty (sigma-sigma_n < 5%)',
@@ -429,16 +371,12 @@ class DynO:
             text_result = ['Best value: %0.2f measured | %0.2f estimated' % (self.best_obj_hist[-1],
                                                                              self.best_obj_estim_hist[-1]
                                                                             ),
-                           'Best location: ' + str(np.round(self.best_X_hist[-1],2)) + ' measured | ' +
-                               str(np.round(self.best_X_estim_hist[-1],2)) + ' estimated',
+                           'Best location: ' + str(np.round(self.best_X_hist[-1],2)) + ' measured | ' + str(np.round(self.best_X_estim_hist[-1],2)) + ' estimated',
                            'Estimated optimum: %0.2f \u00B1 %0.2f (mu \u00B1 sigma)' % (self.best_obj_estim_hist[-1],
                                                                               self.best_obj_std_estim_hist[-1]
                                                                               ),
-                           'Estimated optimum location: ' + str(np.round(self.best_X_estim_hist[-1],2)) + ' at iter. %i | ' % (self.iter,) +
-                               str(np.round(self.best_X_estim_hist[-2],2)) + ' at iter. %i' % (self.iter-1,)
+                           'Estimated optimum location: ' + str(np.round(self.best_X_estim_hist[-1],2)) + ' at iter. %i | ' % (self.iter,) + str(np.round(self.best_X_estim_hist[-2],2)) + ' at iter. %i' % (self.iter-1,)
                           ]
-            
-            check = all(criteria)
             
             if Verbose:
                 print('Convergence checks:')
@@ -450,14 +388,18 @@ class DynO:
                         print('Failed.')
                         print('\t\t', text_result[ii])
                 
-                if check:
-                    print('Convergence check passed.')
-                else:
-                    print('Convergence check failed.')
+                if all(criteria):
+                    print('\n1i4c criterion satisfied at iteration %i. Regret estimate < 1%%' % (self.iter,))
+                elif sum(criteria)==3:
+                    print('\n1i3c criterion satisfied at iteration %i. Regret estimate < 2%%' % (self.iter,))
+                elif sum(criteria)==2 and self.iter>=2:
+                    print('\n2i2c criterion satisfied at iteration %i. Regret estimate < 2.5%%' % (self.iter,))
+                elif sum(criteria)==1 and self.iter>=2:
+                    print('\n2i1c criterion satisfied at iteration %i. Regret estimate < 3%%' % (self.iter,))
         else:
             criteria = [False]*4
             if Verbose:
-                print('At least one iteration should be done. Convergence check failed.')
+                print('At least one iteration after initialization should be done to check convergence.')
         
         return criteria
     
@@ -511,21 +453,23 @@ class DynO:
     
     
     # ------------------------------ Display functions ------------------------------
-    #   PlotTrajectory: plots the values of the optimization parameters over time based on the current trajectory
-    #   PlotEstimate: returns the trajectory and the objective funcion (if dimensionality <= 3) evaluated with the GP
+    #   PlotTrajectory: plots the values of the optimization parameters over time based on the current trajectory and displays the objective
+    #   PlotEstimate: returns the GP-evaluated objective funcion (if domain is 2D) or its projection (if domain has dimensionality > 2)
     # ------------------------------
     
-    def PlotTrajectory(self, tSampl=[], XSampl=[], XInst=[], ObjSampl=[], PlotEI=False, PlotUCB=False, Verbose=False):
+    def PlotTrajectory(self, tSampl=[], XSampl=[], XInst=[], ObjSampl=[], PlotEI=False, PlotUCB=False, Verbose=True):
         tRxt = np.linspace(-self.no_tau_to_SS*self.Xinst(0)[0],self.texp,300)
         XRxt = self.Sample_X(tRxt)
+        ObjRxt, StdRxt = self.QueryGP(XRxt)
+        ObjRxt *= self.ObjRescaleF
+        StdRxt *= self.ObjRescaleF
         
-        if len(tSampl) == 0 or len(XSampl) == 0:
-            print('Warning: time or position not given. Plotting theoretical trajectory and GP-sampled objective.')
-            tSampl = np.linspace(0,self.Nsampl-1,self.Nsampl)*self.dtSampling
-            XSampl = self.Sample_X(tSampl)
-            ObjSampl = self.QueryGP(XSampl, False)*self.ObjRescaleF
-            
-        if len(XInst) == 0: XInst = self.Xinst(np.reshape(tSampl, [-1,1]))
+        if (len(tSampl) == 0 or len(XSampl) == 0 or len(ObjSampl)==0) and not len(self.X_hist)==0:
+            data_range = range(np.sum(self.Nsampl_hist[:-1]),np.sum(self.Nsampl_hist))
+            tSampl = self.tSampl_hist[data_range]
+            XSampl = self.X_hist[data_range,:]
+            ObjSampl = self.obj_hist[data_range]
+            XInst = self.Xinst(np.reshape(tSampl, [-1,1]))
         
         fig = plt.figure(figsize=((self.d+1)*5.5,3))
         for ii in range(self.d):
@@ -539,12 +483,13 @@ class DynO:
             plt.ylabel(self.var_names[ii])
             plt.title('K_X = %0.2f' % self.KX[ii])
         
-        if not len(ObjSampl)==0:
-            plt.subplot(1,self.d+1,self.d+1)
-            plt.plot(tSampl/60, ObjSampl, 'k*:')
-            plt.xlabel('Time [h]')
-            plt.ylabel('Objective')
-            plt.show()
+        plt.subplot(1,self.d+1,self.d+1)
+        plt.plot(tSampl/60, ObjSampl, 'k*')
+        plt.plot(tRxt/60, ObjRxt, 'k:')
+        plt.fill_between(tRxt/60, ObjRxt+StdRxt, ObjRxt-StdRxt, color='b', alpha=.2)
+        plt.xlabel('Time [h]')
+        plt.ylabel('Objective')
+        plt.show()
 
         if not len(self.X_hist)==0:
             self.PlotEstimate(XRxt=XRxt, XSampl=XSampl, ObjSampl=ObjSampl, PlotEI=PlotEI, PlotUCB=PlotUCB)
@@ -634,64 +579,32 @@ class DynO:
                     ax.set_xlabel(self.var_names[0])
                     ax.set_ylabel(self.var_names[1])
                     ax.set_zlabel('Objective')
-        elif self.d==3:
-            x1,x2,x3 = np.meshgrid(np.linspace(self.domain[0,0],self.domain[0,1],20),
-                             np.linspace(self.domain[1,0],self.domain[1,1],10),
-                             np.linspace(self.domain[2,0],self.domain[2,1],10)
-                            )
-            mu_estim = np.zeros([10,20,10])
-            std_estim = np.zeros([10,20,10])
-            for ii in range(20):
-                for jj in range(10):
-                    for kk in range(10):
-                        mu_estim[jj,ii,kk], std_estim[jj,ii,kk] = self.QueryGP(np.array([x1[jj,ii,kk], x2[jj,ii,kk], x3[jj,ii,kk]]))
-            mu_estim = mu_estim*self.ObjRescaleF
-            std_estim = std_estim*self.ObjRescaleF
+                    
+        elif self.d>2:
+            tmpsampler = np.random.rand(1000,self.d)
+            Xplot = self.Xdenorm(tmpsampler)
+            (estimObjNorm, estimStdNorm) = self.QueryGP(Xplot)
 
-            nplots = 2+PlotEI+PlotUCB
-            fig = plt.figure(figsize=(5*nplots,8))
-            ax = fig.add_subplot(1,nplots,1, projection='3d')
-            ax.scatter(x1,x2,x3, c=mu_estim, s=20*(mu_estim/np.max(mu_estim))**2, alpha=.2, cmap='YlOrRd')
-            ax.plot(self.X_hist[:,0],self.X_hist[:,1],self.X_hist[:,2], 'k.')
-            if not len(XRxt)==0: ax.plot(XRxt[:,0],XRxt[:,1],XRxt[:,2], 'r:')
-            if not len(XSampl)==0: ax.plot(XSampl[:,0],XSampl[:,1],XSampl[:,2], 'r*')
-            ax.set_xlabel(self.var_names[0])
-            ax.set_ylabel(self.var_names[1])
-            ax.set_zlabel(self.var_names[2])
-            ax.set_title('Estimated objective')
+            estimObj = estimObjNorm*self.ObjRescaleF
+            estimStd = estimStdNorm*self.ObjRescaleF
 
-            ax = fig.add_subplot(1,nplots,2, projection='3d')
-            ax.scatter(x1,x2,x3, c=std_estim, s=40*(std_estim/np.max(mu_estim))**2, alpha=.2, cmap='YlOrRd')
-            ax.plot(self.X_hist[:,0],self.X_hist[:,1],self.X_hist[:,2], 'k.')
-            ax.set_xlabel(self.var_names[0])
-            ax.set_ylabel(self.var_names[1])
-            ax.set_zlabel(self.var_names[2])
-            ax.set_title('Estimated standard dev.')
+            if PlotUCB: fig = plt.figure(figsize=(5*self.d,10))
+            else: fig = plt.figure(figsize=(5*self.d,5))
+            for ii in range(self.d):
+                if PlotUCB: ax = fig.add_subplot(2,self.d,ii+1)
+                else: ax = fig.add_subplot(1,self.d,ii+1)
+                scattplot = ax.scatter(Xplot[:,ii], estimObj, s=4, c=estimStd, alpha=.4, marker='o', cmap='jet', vmin=0)
+                ax.plot(self.X_hist[:,ii], self.obj_hist, 'k.')
+                if not len(XSampl)==0: ax.plot(XSampl[:,ii], ObjSampl, '*r')
+                ax.set_xlabel(self.var_names[ii])
+                ax.set_ylabel('Objective')
 
-            plothere = 2
-            if PlotEI:
-                plothere +=1
-                EI = self.GetEI(mu_estim, std_estim)
+                if PlotUCB:
+                    ax = fig.add_subplot(2,self.d,self.d+ii+1)
+                    ax.scatter(Xplot[:,ii],self.GetGPUCB(estimObj,estimStd), s=4, c=estimStd, alpha=.4, marker='o', cmap='jet', vmin=0)
+                    ax.set_xlabel(self.var_names[ii])
+                    ax.set_ylabel('GP-UCB')
 
-                ax = fig.add_subplot(1,nplots,plothere, projection='3d')
-                ax.scatter(x1,x2,x3, c=EI, s=20*(EI/np.max(EI))**2, alpha=.2, cmap='YlOrRd')
-                ax.plot(self.X_hist[:,0],self.X_hist[:,1],self.X_hist[:,2], 'k.')
-                if not len(XRxt)==0: ax.plot(XRxt[:,0],XRxt[:,1],XRxt[:,2], 'r:')
-                if not len(XSampl)==0: ax.plot(XSampl[:,0],XSampl[:,1],XSampl[:,2], 'r*')
-                ax.set_xlabel(self.var_names[0])
-                ax.set_ylabel(self.var_names[1])
-                ax.set_zlabel(self.var_names[2])
-                plt.title('EI')
-            if PlotUCB:
-                plothere +=1
-                GPUCB = self.GetGPUCB(mu_estim, std_estim)
-
-                ax = fig.add_subplot(1,nplots,plothere, projection='3d')
-                ax.scatter(x1,x2,x3, c=GPUCB, s=20*(GPUCB/np.max(GPUCB))**2, alpha=.2, cmap='YlOrRd')
-                ax.plot(self.X_hist[:,0],self.X_hist[:,1],self.X_hist[:,2], 'k.')
-                if not len(XRxt)==0: ax.plot(XRxt[:,0],XRxt[:,1],XRxt[:,2], 'r:')
-                if not len(XSampl)==0: ax.plot(XSampl[:,0],XSampl[:,1],XSampl[:,2], 'r*')
-                ax.set_xlabel(self.var_names[0])
-                ax.set_ylabel(self.var_names[1])
-                ax.set_zlabel(self.var_names[2])
-                plt.title('GP-UCB')
+            fig.subplots_adjust(right=0.9)
+            cbar_ax = fig.add_axes([0.93, 0.15, 0.01, 0.7])
+            fig.colorbar(scattplot, cax=cbar_ax, label='GP standard deviation')
